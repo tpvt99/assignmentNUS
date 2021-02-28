@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import division
 import rospy
 import numpy as np
 
@@ -16,6 +17,7 @@ import time
 import pandas as pd
 from util import PriorityQueue
 from util import euclideanHeuristic, manhattanHeuristic
+
 
 ROBOT_SIZE = 0.2552  # width and height of robot in terms of stage unit
 
@@ -84,9 +86,8 @@ class Planner:
         # TODO: FILL ME! implement obstacle inflation function and define self.aug_map = new_mask
 
         # FOR EXP, output map as 2d
-        #pd.DataFrame(np.array(self.map).reshape(200,200)).to_csv("original_map.csv", index=False)
-        #pd.DataFrame(np.flipud(np.array(self.map).reshape(200,200))).to_csv("original_map_flip.csv", index=False)
-
+        pd.DataFrame(np.array(self.map).reshape(200,200)).to_csv("original_map.csv", index=False)
+        pd.DataFrame(np.flipud(np.array(self.map).reshape(200,200))).to_csv("original_map_flip.csv", index=False)
 
         # Step 1. Convert to numpy 2d array
         new_map = np.array(self.map).reshape(self.world_width, self.world_height)
@@ -96,7 +97,7 @@ class Planner:
         obstacles = np.where(new_map == 100)
 
         # Step 3. Inflation
-        flip_type = 2 # 1 mean inflate left and right same size as inflation_ratio, #2 means divide inflation equally on both side
+        flip_type = 1 # 1 mean inflate left and right same size as inflation_ratio, #2 means divide inflation equally on both side
         if flip_type == 1:
             for ob_x, ob_y in zip(*obstacles):
                 mask_row_top = ob_x - self.inflation_ratio
@@ -129,12 +130,12 @@ class Planner:
                 new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
 
         self.aug_map_2d = new_map # Easier to manipulate
+        self.aug_map_2d = np.flipud(self.aug_map_2d)
         new_map = tuple(new_map.reshape(self.world_width*self.world_height))
 
-
         # FOR EXP, output map as 2d
-        #pd.DataFrame(np.array(new_map).reshape(200, 200)).to_csv("inflated_map.csv", index=False)
-        #pd.DataFrame(np.flipud(np.array(new_map).reshape(200,200))).to_csv("inflated_map_flip.csv", index=False)
+        pd.DataFrame(np.array(new_map).reshape(200, 200)).to_csv("inflated_map.csv", index=False)
+        pd.DataFrame(np.flipud(np.array(new_map).reshape(200,200))).to_csv("inflated_map_flip.csv", index=False)
 
         # you should inflate the map to get self.aug_map
         self.aug_map = copy.deepcopy(new_map)
@@ -229,6 +230,31 @@ class Planner:
         message.angular.z = az
         return message
 
+    def index_from_map_to_real(self, x, y, is_discrete = True):
+        '''
+        Function to map from pixel of aug_map to real stage map
+        :param x: is a pixel (integer type)
+        :param y: is a pixel (integer type)
+        :return value: a floating point if is_discrete False, else a round integer
+        '''
+        real_x = x * self.resolution
+        real_y = y * self.resolution
+        if is_discrete:
+            real_x = int(round(real_x))
+            real_y = int(round(real_y))
+        return real_x, real_y
+
+    def index_from_real_to_map(self, x, y):
+        '''
+        Function to map from stage map to pixel on aug_map
+        :param x is an index of real map, can be integer or float
+        :param y is an index of real map, can be integer or float
+        :return an integer list
+        '''
+        map_x = x / self.resolution
+        map_y = y / self.resolution
+        return int(round(map_x)), int(round(map_y))
+
     def generate_plan(self):
         """TODO: FILL ME! This function generates the plan for the robot, given a goal.
         You should store the list of actions into self.action_seq.
@@ -243,6 +269,11 @@ class Planner:
         Each action could be: (v, \omega) where v is the linear velocity and \omega is the angular velocity
         """
         ACTION = [(1,0), (0,1), (0, -1), (-1,0)]
+        # [(1,0)] mean forward
+        # [(0,1), (1,0)] mean turn left, forward
+        # [(0,-1), (1,0)] mean turn right, forward
+        # [(0,1), (0,1), (1,0)] mean turn left, left, forward (Go backward)
+        ACTION_SEQUENCES = [[(1,0)], [(0,1), (1,0)], [(0, -1), (1,0)], [(0,1),(0,1),(1,0)]]
 
         heuristic = manhattanHeuristic
         startState = self.get_current_discrete_state()
@@ -251,6 +282,7 @@ class Planner:
         fringe = PriorityQueue()
         seq_state_acts = [(startState, "", 0)]
         fringe.push(seq_state_acts, 0)
+        self.action_seq = []
 
         while True:
             if fringe.isEmpty():
@@ -263,25 +295,34 @@ class Planner:
             if self._check_goal(last_state):
                 # Build the action sequences
                 for item in currentPath:
-                    if item[1] != "":
-                        self.action_seq.append(item[1])
+                    actions = item[1]
+                    if actions != "":
+                        for action in actions:
+                            self.action_seq.append(action)
                 return
             if last_state not in closedSet:
                 closedSet.append(last_state)
                 # Get the neighbors by executing actions
-                for action in ACTION:
-                    x, y, theta, v, w = last_state[0], last_state[1], last_state[2], action[0], action[1]
-                    next_state = self.discrete_motion_predict(x, y, theta, v, w)
-                    shortestCostFromStart = last_cost - heuristic(last_state, goal) + self._d_from_goal(next_state)
-                    heuristicCost = heuristic(next_state, goal)
-                    newCost = shortestCostFromStart + heuristicCost
-                    newPath = currentPath.append((next_state, action, newCost))
+                for actions in ACTION_SEQUENCES:
+                    current_state = last_state[0], last_state[1], last_state[2]
+                    for action in actions:
+                        x, y, theta, v, w = current_state[0], current_state[1], current_state[2], action[0], action[1]
+                        next_state = self.discrete_motion_predict(x, y, theta, v, w)
+                        if next_state is None: # if either turn left or go forward fails, stop this action sequences
+                            break
+                        next_state = tuple(int(x) for x in next_state)
+                        current_state = next_state
+                    if next_state is None:
+                        continue
+                    #Convert state (real) to aug_map state
+                    fake_last_state = self.index_from_real_to_map(last_state[0], last_state[1])
+                    fake_goal_state = self.index_from_real_to_map(goalState[0], goalState[1])
+                    fake_next_state = self.index_from_real_to_map(next_state[0], next_state[1])
+                    cost_to_come = last_cost - heuristic(fake_last_state, fake_goal_state) + 1
+                    cost_to_go = heuristic(fake_next_state, fake_goal_state)
+                    newCost = cost_to_come + cost_to_go
+                    newPath = currentPath + [(next_state, actions, newCost)]
                     fringe.push(newPath, newCost)
-
-
-
-
-        self.action_seq = []
 
 
     def get_current_continuous_state(self):
@@ -328,14 +369,14 @@ class Planner:
         """
 
         # Step 1. Return true position from world map to augmented map
-        x = x / self.resolution
-        y = y / self.resolution
-        # Step 2. Discretize the position
-        discrete_x = int(round(x))
-        discrete_y = int(round(y))
-        if self.aug_map_2d[discrete_x, discrete_y] == 100:
-            return True
-        return False
+        x, y = self.index_from_real_to_map(x, y)
+        robot_inflation = int(round(ROBOT_SIZE / self.resolution))
+        true_x, true_y = self.world_width - y, x
+        mask = self.aug_map_2d[true_x-robot_inflation:true_x+robot_inflation, true_y-robot_inflation:true_y+robot_inflation]
+        indexOfCollision = np.where(mask == 100)
+        if indexOfCollision[0].size == 0:
+            return False
+        return True
 
 
     def motion_predict(self, x, y, theta, v, w, dt=0.5, frequency=10):
