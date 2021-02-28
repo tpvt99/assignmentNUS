@@ -9,6 +9,13 @@ from const import *
 from math import *
 import copy
 import argparse
+import json
+import time
+
+# My import
+import pandas as pd
+from util import PriorityQueue
+from util import euclideanHeuristic, manhattanHeuristic
 
 ROBOT_SIZE = 0.2552  # width and height of robot in terms of stage unit
 
@@ -76,8 +83,62 @@ class Planner:
 
         # TODO: FILL ME! implement obstacle inflation function and define self.aug_map = new_mask
 
+        # FOR EXP, output map as 2d
+        #pd.DataFrame(np.array(self.map).reshape(200,200)).to_csv("original_map.csv", index=False)
+        #pd.DataFrame(np.flipud(np.array(self.map).reshape(200,200))).to_csv("original_map_flip.csv", index=False)
+
+
+        # Step 1. Convert to numpy 2d array
+        new_map = np.array(self.map).reshape(self.world_width, self.world_height)
+
+        # Step 2. Get the obstacles
+        assert np.array_equal(np.unique(new_map), np.array([-1, 100])) # Ensuring map has only 2 values: -1 for Unknown, 100 for obstacles
+        obstacles = np.where(new_map == 100)
+
+        # Step 3. Inflation
+        flip_type = 2 # 1 mean inflate left and right same size as inflation_ratio, #2 means divide inflation equally on both side
+        if flip_type == 1:
+            for ob_x, ob_y in zip(*obstacles):
+                mask_row_top = ob_x - self.inflation_ratio
+                mask_row_bot = ob_x + self.inflation_ratio+1
+                mask_col_left = ob_y - self.inflation_ratio
+                mask_col_right = ob_y + self.inflation_ratio+1
+                if mask_row_top < 0:
+                    mask_row_top = 0
+                if mask_col_left < 0:
+                    mask_col_left = 0
+                if mask_row_bot > self.world_width: # Index is equal to width because in python, the last index is not get
+                    mask_row_bot = self.world_width
+                if mask_col_right > self.world_height:
+                    mask_col_right = self.world_height
+                new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
+        else:
+            for ob_x, ob_y in zip(*obstacles):
+                mask_row_top = ob_x - self.inflation_ratio//2
+                mask_row_bot = ob_x + self.inflation_ratio//2+1
+                mask_col_left = ob_y - self.inflation_ratio//2
+                mask_col_right = ob_y + self.inflation_ratio//2+1
+                if mask_row_top < 0:
+                    mask_row_top = 0
+                if mask_col_left < 0:
+                    mask_col_left = 0
+                if mask_row_bot > self.world_width: # Index is equal to width because in python, the last index is not get
+                    mask_row_bot = self.world_width
+                if mask_col_right > self.world_height:
+                    mask_row_right = self.world_height
+                new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
+
+        self.aug_map_2d = new_map # Easier to manipulate
+        new_map = tuple(new_map.reshape(self.world_width*self.world_height))
+
+
+        # FOR EXP, output map as 2d
+        #pd.DataFrame(np.array(new_map).reshape(200, 200)).to_csv("inflated_map.csv", index=False)
+        #pd.DataFrame(np.flipud(np.array(new_map).reshape(200,200))).to_csv("inflated_map_flip.csv", index=False)
+
         # you should inflate the map to get self.aug_map
-        self.aug_map = copy.deepcopy(self.map)
+        self.aug_map = copy.deepcopy(new_map)
+
 
     def _pose_callback(self, msg):
         """get the raw pose of the robot from ROS
@@ -181,7 +242,47 @@ class Planner:
 
         Each action could be: (v, \omega) where v is the linear velocity and \omega is the angular velocity
         """
+        ACTION = [(1,0), (0,1), (0, -1), (-1,0)]
+
+        heuristic = manhattanHeuristic
+        startState = self.get_current_discrete_state()
+        goalState = self._get_goal_position()
+        closedSet = [] # To not add expanded state into the path
+        fringe = PriorityQueue()
+        seq_state_acts = [(startState, "", 0)]
+        fringe.push(seq_state_acts, 0)
+
+        while True:
+            if fringe.isEmpty():
+                self.action_seq = []
+                return
+
+            currentPath = fringe.pop() # currentPath is a list where each element is (state, action_from_prev_state_to_this_state, cost_from_start_to_this_state)
+            last_state, last_action, last_cost = currentPath[-1]
+            # If this is goal
+            if self._check_goal(last_state):
+                # Build the action sequences
+                for item in currentPath:
+                    if item[1] != "":
+                        self.action_seq.append(item[1])
+                return
+            if last_state not in closedSet:
+                closedSet.append(last_state)
+                # Get the neighbors by executing actions
+                for action in ACTION:
+                    x, y, theta, v, w = last_state[0], last_state[1], last_state[2], action[0], action[1]
+                    next_state = self.discrete_motion_predict(x, y, theta, v, w)
+                    shortestCostFromStart = last_cost - heuristic(last_state, goal) + self._d_from_goal(next_state)
+                    heuristicCost = heuristic(next_state, goal)
+                    newCost = shortestCostFromStart + heuristicCost
+                    newPath = currentPath.append((next_state, action, newCost))
+                    fringe.push(newPath, newCost)
+
+
+
+
         self.action_seq = []
+
 
     def get_current_continuous_state(self):
         """Our state is defined to be the tuple (x,y,theta). 
@@ -226,7 +327,16 @@ class Planner:
             bool -- True for collision, False for non-collision
         """
 
+        # Step 1. Return true position from world map to augmented map
+        x = x / self.resolution
+        y = y / self.resolution
+        # Step 2. Discretize the position
+        discrete_x = int(round(x))
+        discrete_y = int(round(y))
+        if self.aug_map_2d[discrete_x, discrete_y] == 100:
+            return True
         return False
+
 
     def motion_predict(self, x, y, theta, v, w, dt=0.5, frequency=10):
         """predict the next pose of the robot given controls. Returns None if the robot collide with the wall
@@ -337,7 +447,7 @@ class Planner:
                 else:
                     action = (np.pi/2, -1)
             print("Sending actions:", action[0], action[1]*np.pi/2)
-            msg = create_control_msg(action[0], 0, 0, 0, 0, action[1]*np.pi/2)
+            msg = self.create_control_msg(action[0], 0, 0, 0, 0, action[1]*np.pi/2)
             self.controller.publish(msg)
             rospy.sleep(0.6)
             self.controller.publish(msg)
