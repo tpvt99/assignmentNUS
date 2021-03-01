@@ -86,14 +86,15 @@ class Planner:
         # TODO: FILL ME! implement obstacle inflation function and define self.aug_map = new_mask
 
         # FOR EXP, output map as 2d
-        pd.DataFrame(np.array(self.map).reshape(200,200)).to_csv("original_map.csv", index=False)
-        pd.DataFrame(np.flipud(np.array(self.map).reshape(200,200))).to_csv("original_map_flip.csv", index=False)
+        pd.DataFrame(np.array(self.map).reshape(self.world_height,self.world_width)).to_csv("original_map.csv", index=False)
+        pd.DataFrame(np.flipud(np.array(self.map).reshape(self.world_height,self.world_width))).to_csv("original_map_flip.csv", index=False)
 
         # Step 1. Convert to numpy 2d array
-        new_map = np.array(self.map).reshape(self.world_width, self.world_height)
+        new_map = np.array(self.map).reshape(self.world_height, self.world_width)
 
         # Step 2. Get the obstacles
-        assert np.array_equal(np.unique(new_map), np.array([-1, 100])) # Ensuring map has only 2 values: -1 for Unknown, 100 for obstacles
+        print(np.unique(new_map))
+        #assert np.array_equal(np.unique(new_map), np.array([-1, 100])) # Ensuring map has only 2 values: -1 for Unknown, 100 for obstacles
         obstacles = np.where(new_map == 100)
 
         # Step 3. Inflation
@@ -108,10 +109,10 @@ class Planner:
                     mask_row_top = 0
                 if mask_col_left < 0:
                     mask_col_left = 0
-                if mask_row_bot > self.world_width: # Index is equal to width because in python, the last index is not get
-                    mask_row_bot = self.world_width
-                if mask_col_right > self.world_height:
-                    mask_col_right = self.world_height
+                if mask_row_bot > self.world_height: # Index is equal to width because in python, the last index is not get
+                    mask_row_bot = self.world_height
+                if mask_col_right > self.world_width:
+                    mask_col_right = self.world_width
                 new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
         else:
             for ob_x, ob_y in zip(*obstacles):
@@ -123,10 +124,10 @@ class Planner:
                     mask_row_top = 0
                 if mask_col_left < 0:
                     mask_col_left = 0
-                if mask_row_bot > self.world_width: # Index is equal to width because in python, the last index is not get
-                    mask_row_bot = self.world_width
-                if mask_col_right > self.world_height:
-                    mask_row_right = self.world_height
+                if mask_row_bot > self.world_height: # Index is equal to width because in python, the last index is not get
+                    mask_row_bot = self.world_height
+                if mask_col_right > self.world_width:
+                    mask_col_right = self.world_width
                 new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
 
         self.aug_map_2d = new_map # Easier to manipulate
@@ -134,8 +135,8 @@ class Planner:
         new_map = tuple(new_map.reshape(self.world_width*self.world_height))
 
         # FOR EXP, output map as 2d
-        pd.DataFrame(np.array(new_map).reshape(200, 200)).to_csv("inflated_map.csv", index=False)
-        pd.DataFrame(np.flipud(np.array(new_map).reshape(200,200))).to_csv("inflated_map_flip.csv", index=False)
+        pd.DataFrame(np.array(new_map).reshape(self.world_height,self.world_width)).to_csv("inflated_map.csv", index=False)
+        pd.DataFrame(np.flipud(np.array(new_map).reshape(self.world_height,self.world_width))).to_csv("inflated_map_flip.csv", index=False)
 
         # you should inflate the map to get self.aug_map
         self.aug_map = copy.deepcopy(new_map)
@@ -291,8 +292,10 @@ class Planner:
 
             currentPath = fringe.pop() # currentPath is a list where each element is (state, action_from_prev_state_to_this_state, cost_from_start_to_this_state)
             last_state, last_action, last_cost = currentPath[-1]
+
             # If this is goal
             if self._check_goal(last_state):
+                print(currentPath)
                 # Build the action sequences
                 for item in currentPath:
                     actions = item[1]
@@ -315,9 +318,9 @@ class Planner:
                     if next_state is None:
                         continue
                     #Convert state (real) to aug_map state
-                    fake_last_state = self.index_from_real_to_map(last_state[0], last_state[1])
-                    fake_goal_state = self.index_from_real_to_map(goalState[0], goalState[1])
-                    fake_next_state = self.index_from_real_to_map(next_state[0], next_state[1])
+                    fake_last_state = (last_state[0], last_state[1])
+                    fake_goal_state = (goalState[0], goalState[1])
+                    fake_next_state = (next_state[0], next_state[1])
                     cost_to_come = last_cost - heuristic(fake_last_state, fake_goal_state) + 1
                     cost_to_go = heuristic(fake_next_state, fake_goal_state)
                     newCost = cost_to_come + cost_to_go
@@ -371,7 +374,7 @@ class Planner:
         # Step 1. Return true position from world map to augmented map
         x, y = self.index_from_real_to_map(x, y)
         robot_inflation = int(round(ROBOT_SIZE / self.resolution))
-        true_x, true_y = self.world_width - y, x
+        true_x, true_y = self.world_height - y, x
         mask = self.aug_map_2d[true_x-robot_inflation:true_x+robot_inflation, true_y-robot_inflation:true_y+robot_inflation]
         indexOfCollision = np.where(mask == 100)
         if indexOfCollision[0].size == 0:
