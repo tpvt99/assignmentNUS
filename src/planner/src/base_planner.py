@@ -15,9 +15,6 @@ import time
 
 # My import
 import pandas as pd
-from util import PriorityQueue
-from util import euclideanHeuristic, manhattanHeuristic
-
 
 ROBOT_SIZE = 0.2552  # width and height of robot in terms of stage unit
 
@@ -39,7 +36,7 @@ def dump_action_table(action_table, filename):
         json.dump(tab, fout)
 
 
-class Planner:
+class Planner(object):
     def __init__(self, world_width, world_height, world_resolution, inflation_ratio=3):
         """init function of the base planner. You should develop your own planner
         using this class as a base.
@@ -129,6 +126,19 @@ class Planner:
                 if mask_col_right > self.world_width:
                     mask_col_right = self.world_width
                 new_map[mask_row_top:mask_row_bot, mask_col_left:mask_col_right] = 100 # 100 means obstacle
+
+        # Because some map does not have borders, inflate the border by the inflation_rate
+
+        for col in range(self.world_width):# Inflate the top border
+            new_map[0:self.inflation_ratio, col] = 100
+        for col in range(self.world_width):# Inflate the bottom border
+            new_map[-self.inflation_ratio:, col] = 100
+        for row in range(self.world_height):# Inflate the left border
+            new_map[row, 0:self.inflation_ratio] = 100
+        for row in range(self.world_height): # Inflate the right border
+            new_map[row, -self.inflation_ratio:] = 100
+
+
 
         self.aug_map_2d = new_map # Easier to manipulate
         self.aug_map_2d = np.flipud(self.aug_map_2d)
@@ -269,63 +279,8 @@ class Planner:
 
         Each action could be: (v, \omega) where v is the linear velocity and \omega is the angular velocity
         """
-        ACTION = [(1,0), (0,1), (0, -1), (-1,0)]
-        # [(1,0)] mean forward
-        # [(0,1), (1,0)] mean turn left, forward
-        # [(0,-1), (1,0)] mean turn right, forward
-        # [(0,1), (0,1), (1,0)] mean turn left, left, forward (Go backward)
-        ACTION_SEQUENCES = [[(1,0)], [(0,1), (1,0)], [(0, -1), (1,0)], [(0,1),(0,1),(1,0)]]
-
-        heuristic = manhattanHeuristic
-        startState = self.get_current_discrete_state()
-        goalState = self._get_goal_position()
-        closedSet = [] # To not add expanded state into the path
-        fringe = PriorityQueue()
-        seq_state_acts = [(startState, "", 0)]
-        fringe.push(seq_state_acts, 0)
-        self.action_seq = []
-
-        while True:
-            if fringe.isEmpty():
-                self.action_seq = []
-                return
-
-            currentPath = fringe.pop() # currentPath is a list where each element is (state, action_from_prev_state_to_this_state, cost_from_start_to_this_state)
-            last_state, last_action, last_cost = currentPath[-1]
-
-            # If this is goal
-            if self._check_goal(last_state):
-                print(currentPath)
-                # Build the action sequences
-                for item in currentPath:
-                    actions = item[1]
-                    if actions != "":
-                        for action in actions:
-                            self.action_seq.append(action)
-                return
-            if last_state not in closedSet:
-                closedSet.append(last_state)
-                # Get the neighbors by executing actions
-                for actions in ACTION_SEQUENCES:
-                    current_state = last_state[0], last_state[1], last_state[2]
-                    for action in actions:
-                        x, y, theta, v, w = current_state[0], current_state[1], current_state[2], action[0], action[1]
-                        next_state = self.discrete_motion_predict(x, y, theta, v, w)
-                        if next_state is None: # if either turn left or go forward fails, stop this action sequences
-                            break
-                        next_state = tuple(int(x) for x in next_state)
-                        current_state = next_state
-                    if next_state is None:
-                        continue
-                    #Convert state (real) to aug_map state
-                    fake_last_state = (last_state[0], last_state[1])
-                    fake_goal_state = (goalState[0], goalState[1])
-                    fake_next_state = (next_state[0], next_state[1])
-                    cost_to_come = last_cost - heuristic(fake_last_state, fake_goal_state) + 1
-                    cost_to_go = heuristic(fake_next_state, fake_goal_state)
-                    newCost = cost_to_come + cost_to_go
-                    newPath = currentPath + [(next_state, actions, newCost)]
-                    fringe.push(newPath, newCost)
+        #raise NotImplementedError
+        pass
 
 
     def get_current_continuous_state(self):
@@ -451,7 +406,7 @@ class Planner:
         return None
 
     def publish_control(self):
-        """publish the continuous controls
+        """publish the continuous controls (task 2)
         """
         for action in self.action_seq:
             msg = self.create_control_msg(action[0], 0, 0, 0, 0, action[1])
@@ -459,7 +414,7 @@ class Planner:
             rospy.sleep(0.6)
 
     def publish_discrete_control(self):
-        """publish the discrete controls
+        """publish the discrete controls (task 1)
         """
         for action in self.action_seq:
             msg = self.create_control_msg(
@@ -470,7 +425,7 @@ class Planner:
             rospy.sleep(0.6)
 
     def publish_stochastic_control(self):
-        """publish stochastic controls in MDP. 
+        """publish stochastic controls in MDP.  (task 3)
         In MDP, we simulate the stochastic dynamics of the robot as described in the assignment description.
         Please use this function to publish your controls in task 3, MDP. DO NOT CHANGE THE PARAMETERS :)
         We will test your policy using the same function.
@@ -502,11 +457,15 @@ class Planner:
 
 if __name__ == "__main__":
     # TODO: You can run the code using the code below
+    from task1_dsda_planner import DSDAPlanner
+    from task2_csda_planner import CSDAPlanner
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--goal', type=str, default='1,8',
                         help='goal position')
     parser.add_argument('--com', type=int, default=0,
                         help="if the map is com1 map")
+    parser.add_argument('--task', type=int, default=2) # 1 mean DSDA, 2 mean CSDA, 3 mean MD
     args = parser.parse_args()
 
     try:
@@ -525,13 +484,21 @@ if __name__ == "__main__":
 
     # TODO: You should change this value accordingly
     inflation_ratio = 3
-    planner = Planner(width, height, resolution, inflation_ratio=inflation_ratio)
+    if args.task == 1:
+        planner = DSDAPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
+    elif args.task == 2:
+        inflation_ratio=4 # for maze2.jpg, goal (9,9)
+        planner = CSDAPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
     planner.set_goal(goal[0], goal[1])
+
     if planner.goal is not None:
         planner.generate_plan()
 
     # You could replace this with other control publishers
-    planner.publish_discrete_control()
+    if args.task == 1:
+        planner.publish_discrete_control()
+    elif args.task == 2:
+        planner.publish_control()
 
     # save your action sequence
     result = np.array(planner.action_seq)
