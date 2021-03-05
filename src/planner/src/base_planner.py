@@ -330,7 +330,22 @@ class Planner(object):
         x, y = self.index_from_real_to_map(x, y)
         robot_inflation = int(round(ROBOT_SIZE / self.resolution))
         true_x, true_y = self.world_height - y, x
-        mask = self.aug_map_2d[true_x-robot_inflation:true_x+robot_inflation, true_y-robot_inflation:true_y+robot_inflation]
+        inflate_row_top = true_x - robot_inflation
+        inflate_row_bot = true_x + robot_inflation
+        inflate_col_left = true_y - robot_inflation
+        inflate_col_right = true_y + robot_inflation
+
+        if inflate_row_top < 0:
+            inflate_row_top = 0
+        if inflate_row_bot > self.world_height:
+            inflate_row_bot = self.world_height
+        if inflate_col_left < 0:
+            inflate_col_left = 0
+        if inflate_col_right > self.world_width:
+            inflate_col_right = self.world_width
+
+        #mask = self.aug_map_2d[true_x-robot_inflation:true_x+robot_inflation, true_y-robot_inflation:true_y+robot_inflation]
+        mask = self.aug_map_2d[inflate_row_top:inflate_row_bot, inflate_col_left:inflate_col_right]
         indexOfCollision = np.where(mask == 100)
         if indexOfCollision[0].size == 0:
             return False
@@ -453,19 +468,21 @@ class Planner(object):
             rospy.sleep(0.6)
             time.sleep(1)
             current_state = self.get_current_state()
+            print(current_state)
 
 
 if __name__ == "__main__":
     # TODO: You can run the code using the code below
     from task1_dsda_planner import DSDAPlanner
     from task2_csda_planner import CSDAPlanner
+    from task3_mdp_planner import MDPPlanner
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--goal', type=str, default='1,8',
                         help='goal position')
     parser.add_argument('--com', type=int, default=0,
                         help="if the map is com1 map")
-    parser.add_argument('--task', type=int, default=2) # 1 mean DSDA, 2 mean CSDA, 3 mean MD
+    parser.add_argument('--task', type=int, default=3) # 1 mean DSDA, 2 mean CSDA, 3 mean MD
     args = parser.parse_args()
 
     try:
@@ -489,6 +506,9 @@ if __name__ == "__main__":
     elif args.task == 2:
         inflation_ratio=4 # for maze2.jpg, goal (9,9)
         planner = CSDAPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
+    elif args.task == 3:
+        planner = MDPPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
+
     planner.set_goal(goal[0], goal[1])
 
     if planner.goal is not None:
@@ -499,13 +519,17 @@ if __name__ == "__main__":
         planner.publish_discrete_control()
     elif args.task == 2:
         planner.publish_control()
+    elif args.task == 3:
+        planner.publish_stochastic_control()
 
     # save your action sequence
-    result = np.array(planner.action_seq)
-    np.savetxt("actions_continuous.txt", result, fmt="%.2e")
+    if args.task == 1 or args.task == 2:
+        result = np.array(planner.action_seq)
+        np.savetxt("actions_continuous.txt", result, fmt="%.2e")
 
     # for MDP, please dump your policy table into a json file
-    # dump_action_table(planner.action_table, 'mdp_policy.json')
+    if args.task == 3:
+        dump_action_table(planner.action_table, 'mdp_policy.json')
 
     # spin the ros
     rospy.spin()

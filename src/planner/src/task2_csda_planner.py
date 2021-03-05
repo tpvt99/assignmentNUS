@@ -44,8 +44,8 @@ class CSDAPlanner(Planner):
         Each action could be: (v, \omega) where v is the linear velocity and \omega is the angular velocity
         """
 
-        ACTION_SEQUENCES = [[(1,0)], [(1, np.pi/2)], [(1, -np.pi/2)], [(0, np.pi / 2)], [(0, -np.pi / 2)]]
-        COST_ACTION_SEQUENCES = [0, 0.5, 0.5, 2, 2]
+        ACTION_SEQUENCES = [[(1,0)], [(1, np.pi/2)], [(1, -np.pi/2)]]
+        COST_ACTION_SEQUENCES = [0, 0.5, 0.5]
 
 
         start_cont_state = self.get_current_continuous_state()
