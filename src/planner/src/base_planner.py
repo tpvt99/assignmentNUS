@@ -15,6 +15,7 @@ import time
 
 # My import
 import pandas as pd
+import pickle
 
 ROBOT_SIZE = 0.2552  # width and height of robot in terms of stage unit
 
@@ -83,8 +84,8 @@ class Planner(object):
         # TODO: FILL ME! implement obstacle inflation function and define self.aug_map = new_mask
 
         # FOR EXP, output map as 2d
-        pd.DataFrame(np.array(self.map).reshape(self.world_height,self.world_width)).to_csv("original_map.csv", index=False)
-        pd.DataFrame(np.flipud(np.array(self.map).reshape(self.world_height,self.world_width))).to_csv("original_map_flip.csv", index=False)
+        #pd.DataFrame(np.array(self.map).reshape(self.world_height,self.world_width)).to_csv("original_map.csv", index=False)
+        #pd.DataFrame(np.flipud(np.array(self.map).reshape(self.world_height,self.world_width))).to_csv("original_map_flip.csv", index=False)
 
         # Step 1. Convert to numpy 2d array
         new_map = np.array(self.map).reshape(self.world_height, self.world_width)
@@ -145,8 +146,8 @@ class Planner(object):
         new_map = tuple(new_map.reshape(self.world_width*self.world_height))
 
         # FOR EXP, output map as 2d
-        pd.DataFrame(np.array(new_map).reshape(self.world_height,self.world_width)).to_csv("inflated_map.csv", index=False)
-        pd.DataFrame(np.flipud(np.array(new_map).reshape(self.world_height,self.world_width))).to_csv("inflated_map_flip.csv", index=False)
+        #pd.DataFrame(np.array(new_map).reshape(self.world_height,self.world_width)).to_csv("inflated_map.csv", index=False)
+        #pd.DataFrame(np.flipud(np.array(new_map).reshape(self.world_height,self.world_width))).to_csv("inflated_map_flip.csv", index=False)
 
         # you should inflate the map to get self.aug_map
         self.aug_map = copy.deepcopy(new_map)
@@ -328,7 +329,7 @@ class Planner(object):
 
         # Step 1. Return true position from world map to augmented map
         x, y = self.index_from_real_to_map(x, y)
-        robot_inflation = int(round(ROBOT_SIZE / self.resolution))
+        robot_inflation = int(round(ROBOT_SIZE / self.resolution)) # loosely the size a bit :')
         true_x, true_y = self.world_height - y, x
         inflate_row_top = true_x - robot_inflation
         inflate_row_bot = true_x + robot_inflation
@@ -460,7 +461,9 @@ class Planner(object):
                     action = (np.pi/2, 1)
                 else:
                     action = (np.pi/2, -1)
-            print("Sending actions:", action[0], action[1]*np.pi/2)
+                print("Real action is: ({}, {}) but Sending actions: ({} {})".format(1 , 0, action[0], action[1] * np.pi / 2))
+            else:
+                print("Real action is: ({}, {}) but Sending actions: ({} {})".format(action[0] , action[1], action[0], action[1] * np.pi / 2))
             msg = self.create_control_msg(action[0], 0, 0, 0, 0, action[1]*np.pi/2)
             self.controller.publish(msg)
             rospy.sleep(0.6)
@@ -504,7 +507,7 @@ if __name__ == "__main__":
     if args.task == 1:
         planner = DSDAPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
     elif args.task == 2:
-        inflation_ratio=4 # for maze2.jpg, goal (9,9)
+        inflation_ratio=3 # for maze2.jpg, goal (9,9)
         planner = CSDAPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
     elif args.task == 3:
         planner = MDPPlanner(width, height, resolution, inflation_ratio=inflation_ratio)
@@ -523,13 +526,17 @@ if __name__ == "__main__":
         planner.publish_stochastic_control()
 
     # save your action sequence
-    if args.task == 1 or args.task == 2:
+    if args.task == 1:
         result = np.array(planner.action_seq)
-        np.savetxt("actions_continuous.txt", result, fmt="%.2e")
+        np.savetxt("task1_actions/{0}_{1}_{2}_{3}.txt".format(1, 'com1', goal[0], goal[1]), result, fmt="%.2e")
+    elif args.task == 2:
+        result = np.array(planner.action_seq)
+        np.savetxt("task2_actions/{0}_{1}_{2}_{3}.txt".format(2, 'com1', goal[0], goal[1]), result, fmt="%.2e")
 
     # for MDP, please dump your policy table into a json file
     if args.task == 3:
-        dump_action_table(planner.action_table, 'mdp_policy.json')
+        dump_action_table(planner.action_table, 'task3_actions/{0}_{1}_{2}_{3}.json'.format(3, 'com1', goal[0], goal[1]))
 
     # spin the ros
+    print('Done')
     rospy.spin()

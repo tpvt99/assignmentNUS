@@ -58,7 +58,7 @@ class DSDAPlanner(Planner):
             if last_state not in closedSet:
                 closedSet.append(last_state)
                 # Get the neighbors by executing actions
-                for actions in ACTION_SEQUENCES:
+                for index, actions in enumerate(ACTION_SEQUENCES):
                     current_state = last_state[0], last_state[1], last_state[2]
                     next_state = None
                     for action in actions:
@@ -76,6 +76,6 @@ class DSDAPlanner(Planner):
                     map_next_state = (next_state[0], next_state[1])
                     cost_to_come = last_cost - self.heuristic(map_last_state, map_goal_state) + 1 # 1 is cost-to-come from last to current node
                     cost_to_go = self.heuristic(map_next_state, map_goal_state)
-                    newCost = cost_to_come + cost_to_go
+                    newCost = cost_to_come + cost_to_go + COST_ACTION_SEQUENCES[index]
                     newPath = currentPath + [(next_state, actions, newCost)]
                     fringe.push(newPath, newCost)

@@ -18,53 +18,104 @@ class MDPPlanner(Planner):
         self.possible_states = list(product(range(self.total_discrete_x), range(self.total_discrete_y),
                                             range(self.total_discrete_theta)))
         self.values = np.zeros(shape=(self.total_discrete_x,  self.total_discrete_y, len(self.ACTION_SEQUENCES)))
-        p = self.motion_predict(1, 1, np.pi/2, np.pi/2, 1)
-        pass
-
-    def discretize_state_actions(self, x, y, theta, MAX_ANGLE=4, RESOLUTION=2):
-        '''
-        x: position x of robot
-        y:
-        theta: direction
-        MAX_ANGLE: the allowable angle turn of robot
-        RESOLUTION: Number of discrete square per real unit stage
-        '''
-        dis_x = int(round(x/(1/RESOLUTION)))
-        dis_y = int(round(y/(1/RESOLUTION)))
-        dis_theta = int(round(theta / (np.pi/(MAX_ANGLE/2)))) % MAX_ANGLE
-        return (dis_x, dis_y, dis_theta)
 
     def get_current_state(self):
         state = self.get_current_discrete_state()
         return tuple([int(x) for x in state])
 
+    #LEGACY code
+    # def build_transitions_v2(self):
+    #     self.transitions = {}
+    #     for state in self.possible_states:
+    #         if self.collision_checker(state[0], state[1]):
+    #             continue
+    #         self.transitions[state] = {}
+    #         for action in self.ACTION_SEQUENCES:
+    #             self.transitions[state][action] = {}
+    #
+    #             if action == (0, -1) or action == (0, 1):
+    #                 _, next_state = self.discrete_motion_predict_v2(state[0], state[1], state[2], action[0], action[1])
+    #                 #next_state = tuple([int(x) for x in next_state])  # just discrete
+    #                 self.transitions[state][action][next_state] = 1
+    #             elif action == (1,0):
+    #                 _, next_state = self.discrete_motion_predict_v2(state[0], state[1], state[2], action[0], action[1])
+    #                 #next_state = tuple([int(x) for x in next_state])
+    #                 self.transitions[state][(1,0)][next_state] = 0.9
+    #
+    #                 # probability 0.05
+    #                 for action in [(np.pi / 2, 1), (np.pi / 2, -1)]:
+    #                     _, next_state = self.discrete_motion_predict_v2(state[0], state[1], state[2], action[0], action[1])
+    #                     #next_state = tuple([int(x) for x in next_state])
+    #                     self.transitions[state][(1,0)][next_state] = 0.05
+    #
+    # def build_rewards_v2(self):
+    #     self.rewards = {}
+    #     for state in self.possible_states:
+    #         if self.collision_checker(state[0], state[1]):
+    #             continue
+    #         self.rewards[state] = {}
+    #         for action in self.ACTION_SEQUENCES:
+    #             self.rewards[state][action] = {}
+    #
+    #             if action == (0, -1) or action == (0, 1):
+    #                 isCollision, next_state = self.discrete_motion_predict_v2(state[0], state[1], state[2], action[0], action[1])
+    #                 if not isCollision:
+    #                     #next_state = tuple([int(x) for x in next_state])  # just discrete
+    #                     if self._check_goal((next_state[0], next_state[1])):
+    #                         self.rewards[state][action][next_state] = 1
+    #                     else:
+    #                         self.rewards[state][action][next_state] = 0
+    #                 else:
+    #                     #next_state = tuple([int(x) for x in next_state])
+    #                     self.rewards[state][action][next_state] = -1
+    #             elif action == (1,0):
+    #                 for action in [(np.pi / 2, 1), (np.pi / 2, -1), (1,0)]:
+    #                     isCollision, next_state = self.discrete_motion_predict_v2(state[0], state[1], state[2], action[0], action[1])
+    #                     if not isCollision:
+    #                         #next_state = tuple([int(x) for x in next_state])
+    #                         if self._check_goal((next_state[0], next_state[1])):
+    #                             self.rewards[state][(1,0)][next_state] = 1
+    #                         else:
+    #                             self.rewards[state][(1,0)][next_state] = 0
+    #                     else:
+    #                         #next_state = tuple([int(x) for x in next_state])
+    #                         self.rewards[state][(1,0)][next_state] = -1
 
-    def build_transition(self):
-        self.transition = {}
+    def build_transitions(self):
+        self.transitions = {}
         for state in self.possible_states:
             if self.collision_checker(state[0], state[1]):
                 continue
-            self.transition[state] = {}
+            self.transitions[state] = {}
             for action in self.ACTION_SEQUENCES:
-                self.transition[state][action] = {}
+                self.transitions[state][action] = {}
 
                 if action == (0, -1) or action == (0, 1):
                     next_state = self.discrete_motion_predict(state[0], state[1], state[2], action[0], action[1])
                     if next_state is not None and self.collision_checker(next_state[0], next_state[1]) == False:
                         next_state = tuple([int(x) for x in next_state])  # just discrete
-                        self.transition[state][action][next_state] = 1
+                        if next_state not in self.transitions[state][action]:
+                            self.transitions[state][action][next_state] = [1]
+                        else:
+                            self.transitions[state][action][next_state].append(1)
                 elif action == (1,0):
                     next_state = self.discrete_motion_predict(state[0], state[1], state[2], action[0], action[1])
                     if next_state is not None and self.collision_checker(next_state[0], next_state[1]) == False:
                         next_state = tuple([int(x) for x in next_state])
-                        self.transition[state][(1,0)][next_state] = 0.9
+                        if next_state not in self.transitions[state][(1, 0)]:
+                            self.transitions[state][(1,0)][next_state] = [0.9]
+                        else:
+                            self.transitions[state][(1,0)][next_state].append(0.9)
 
                     # probability 0.05
                     for action in [(np.pi / 2, 1), (np.pi / 2, -1)]:
                         next_state = self.discrete_motion_predict(state[0], state[1], state[2], action[0], action[1])
                         if next_state is not None and self.collision_checker(next_state[0], next_state[1]) == False:
                             next_state = tuple([int(x) for x in next_state])
-                            self.transition[state][(1,0)][next_state] = 0.05
+                            if next_state not in self.transitions[state][(1, 0)]:
+                                self.transitions[state][(1, 0)][next_state] = [0.05]
+                            else:
+                                self.transitions[state][(1, 0)][next_state].append(0.05)
 
     def build_rewards(self):
         self.rewards = {}
@@ -80,18 +131,30 @@ class MDPPlanner(Planner):
                     if next_state is not None and self.collision_checker(next_state[0], next_state[1]) == False:
                         next_state = tuple([int(x) for x in next_state])  # just discrete
                         if self._check_goal((next_state[0], next_state[1])):
-                            self.rewards[state][action][next_state] = 1
+                            if next_state not in self.rewards[state][action]:
+                                self.rewards[state][action][next_state] = [1]
+                            else:
+                                self.rewards[state][action][next_state].append(1)
                         else:
-                            self.rewards[state][action][next_state] = 0
+                            if next_state not in self.rewards[state][action]:
+                                self.rewards[state][action][next_state] = [0]
+                            else:
+                                self.rewards[state][action][next_state].append(0)
                 elif action == (1,0):
                     for action in [(np.pi / 2, 1), (np.pi / 2, -1), (1,0)]:
                         next_state = self.discrete_motion_predict(state[0], state[1], state[2], action[0], action[1])
                         if next_state is not None and self.collision_checker(next_state[0], next_state[1]) == False:
                             next_state = tuple([int(x) for x in next_state])
                             if self._check_goal((next_state[0], next_state[1])):
-                                self.rewards[state][(1,0)][next_state] = 1
+                                if next_state not in self.rewards[state][(1,0)]:
+                                    self.rewards[state][(1,0)][next_state] = [1]
+                                else:
+                                    self.rewards[state][(1,0)][next_state].append(1)
                             else:
-                                self.rewards[state][(1,0)][next_state] = 0
+                                if next_state not in self.rewards[state][(1,0)]:
+                                    self.rewards[state][(1, 0)][next_state] = [0]
+                                else:
+                                    self.rewards[state][(1, 0)][next_state].append(0)
 
 
     def generate_plan(self):
@@ -108,48 +171,63 @@ class MDPPlanner(Planner):
         Each action could be: (v, \omega) where v is the linear velocity and \omega is the angular velocity
         """
 
-        self.build_transition()
+        self.build_transitions()
         self.build_rewards()
 
         policy = {}
         for state in self.possible_states:
             policy[state] = (0,0) # Initialize policy as STAY action
 
-        iteration = 300
+        iteration = 1000
         itr = 0
 
         while itr < iteration:
             newValues = self.values.copy()
             for state in self.possible_states:
-                if state not in self.transition.keys():
+                if state not in self.transitions.keys():
                     newValues[state] = 0
                     continue
 
                 max_value_action = []
-                transition = self.transition[state]
+                transition = self.transitions[state]
                 reward = self.rewards[state]
 
                 for action in self.ACTION_SEQUENCES:
                     value_action = 0
                     for next_state in transition[action].keys():
-                        # print('----')
-                        # print(next_state)
-                        # print(action)
-                        # print(transition)
-                        # print(reward)
-                        # print(transition[action][next_state])
-                        # print(reward[action][next_state])
-                        value_action += transition[action][next_state] * (reward[action][next_state] + self.GAMMA * self.values[next_state])
+                        for zzz in range(len(transition[action][next_state])):
+                            value_action += transition[action][next_state][zzz] * (
+                                        reward[action][next_state][zzz] + self.GAMMA * self.values[next_state])
                     max_value_action.append(value_action)
                 newValues[state] = np.max(np.array(max_value_action))
                 argmax = int(np.argmax(np.array(max_value_action)))
                 policy[state] = self.ACTION_SEQUENCES[argmax]
 
-            if np.mean(np.abs(self.values-newValues)) < 1e-8:
+            if np.mean(np.abs(self.values-newValues)) < 1e-15:
                 break
             itr+=1
-            print('Iteration{} with mean values: {}', itr,np.mean(np.abs(self.values-newValues)))
+            print('Iteration{} with mean values: {}'.format(itr,np.mean(np.abs(self.values-newValues))))
             self.values = newValues.copy()
 
         # Build action table
         self.action_table = policy.copy()
+        #self.plot_matrix()
+
+    def plot_matrix(self):
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(1,1, figsize=(15,15))
+
+        xxx = np.flipud(np.transpose(self.values, (1,0, 2)))
+        action_codes=["LEFT", "TOP", "RIGHT", "BOTTOM"]
+
+        intersection_matrix = xxx[:,:,0]
+
+        ax.matshow(intersection_matrix, cmap=plt.cm.Blues)
+        for j in range(10):
+            for i in range(10):
+                c = "{}".format(round(intersection_matrix[j, i],2))
+                ax.text(i, j, str(c), va='center', ha='center')
+
+        plt.show()
